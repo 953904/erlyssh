@@ -18,7 +18,8 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {shell,pids = [], servers, cur = empty}).
+-record(options, {con = 50, intv = 0}).
+-record(state, {shell,pids = [], servers, cur = empty, opt = #options{}}).
 
 %% ====================================================================
 %% External functions
@@ -31,6 +32,7 @@ start(StartParas) ->
     StartCommand = get_start_command(Command, ""),    
     SharedLib = "readline_drv",
 	%io:format("starting essh server~n"),    
+    essh_scheduler:start(),
     gen_server:start_link({local,?MODULE}, ?MODULE, [SharedPath, SharedLib, FilePath, StartCommand], []).
 
 %% ====================================================================
@@ -146,15 +148,47 @@ handle_call({res, Server, connected, Res}, _From, State)->
 
 %%handle command results
 handle_call({res, Server, responsed, Res}, _From, State) ->
+    gen_server:call(essh_scheduler, {continue}, infinity),
 	%io:format("~p responsed: ~p~n", [Server, Res]),
     StateN = get_processed_state(Server, Res, fun print_cmd_res/2, done, State),			
 	{reply, ok, StateN};
 handle_call({res, Server, failed, Reason}, _From, State) ->
+    gen_server:call(essh_scheduler, {continue}, infinity),
 	io:format("~p failed: ~p~n", [Server, Reason]),
     StateN = get_processed_state(Server, Reason, fun print_cmd_res/2, done, State),	
 	{reply, ok, StateN}.
 
+%%-----------------------------------------------------------------
+get_int_value(Value) ->
+    Vl1 = string:strip(Value),
+    try list_to_integer(Vl1) of
+             Vl2 -> Vl2
+         catch
+			_ : X0 -> {error, X0}
+		 end.
+
 %%process shell commands
+process_input_cmd(#state{shell = Shell}, "#con"++Value) ->
+    Vl = get_int_value(Value),
+    case Vl of 
+        {error, Error} -> io:format("~p~n",[Error]);
+        _ -> 
+            gen_server:call(essh_scheduler, {opt, con, Vl}),
+            gen_server:cast(essh, {opt, con, Vl})
+    end,    
+    Shell ! done;
+process_input_cmd(#state{shell = Shell}, "#intv"++Value) ->
+    Vl = get_int_value(Value),
+    case Vl of 
+        {error, Error} -> io:format("~p~n",[Error]);
+        _ -> 
+            gen_server:call(essh_scheduler, {opt, intv, Vl}),
+            gen_server:cast(essh,  {opt, intv, Vl})
+    end,    
+    Shell ! done;
+process_input_cmd(#state{shell = Shell}, "options;") ->
+    gen_server:cast(essh, {opt, show}),
+    Shell ! done;
 process_input_cmd(#state{shell = Shell}, "exit") ->
     Shell ! done;
 process_input_cmd(#state{shell = Shell},"") ->
@@ -169,7 +203,7 @@ process_input_cmd(_, "exit;") ->
 process_input_cmd(#state{pids = Pids}, Cmd) ->
     io:format("--------------~s---------------~n", [get(primary)]),
   	call_ext(Pids, Cmd).		
-
+%---------------------------------------------------------------------
 
 get_processed_state(Server, Res, PrintMethod, DoneMessage,
 	State = #state{shell = Shell, cur = CurServers, servers = Servers}) ->
@@ -183,7 +217,8 @@ get_processed_state(Server, Res, PrintMethod, DoneMessage,
 		end.
 
 call_ext(Pids, Cmd) ->
-   [gen_fsm:send_event(Pid, {cmd, Cmd}) || Pid <- Pids].
+    gen_server:call(essh_scheduler, {cmd, Pids, Cmd}).
+   
 
 clear_dict() ->
     PrimServer = get(primary),
@@ -267,7 +302,19 @@ print_connect_info(Cur, Res) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_cast(Msg, State) ->
+%%handler for processing options setting
+%% option <con> : limits of concurrent running process
+handle_cast({opt, Opt, Value}, State = #state{opt = Options}) ->
+    OptionsN = case Opt of
+        con ->
+            Options#options{con = Value};
+        intv ->
+            Options#options{intv = Value}               
+    end,
+    StateN = State#state{opt = OptionsN},
+    {noreply, StateN}; 
+handle_cast({opt, show}, State = #state{opt = Options}) ->
+    io:format("~ninfo:options = ~p~n", [Options]),
     {noreply, State}.
 
 %% --------------------------------------------------------------------
