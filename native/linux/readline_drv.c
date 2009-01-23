@@ -25,7 +25,7 @@ static void readline_drv_output(ErlDrvData handle, char *buff, int bufflen)
 	char* prompt;
 	char* temp;
     	readline_data* d = (readline_data*)handle;
-	prompt = "xssh>: ";
+	prompt = "essh>: ";
 	temp = readline (prompt);
 	add_history (temp);
 	
