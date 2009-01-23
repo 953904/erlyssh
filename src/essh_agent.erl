@@ -56,7 +56,7 @@ connect(_, State = #state{server = Server}) ->
             State1 = State#state{port = Port},
             gen_server:call(essh, {res, Server, connected, ok}),
             {next_state, connected, State1};
-        {failed, Reason} ->
+        {failed, _Reason} ->
             gen_server:call(essh, {res, Server, connected, failed}),
             {next_state, connection_failed, State}
     end.
@@ -72,7 +72,10 @@ connected({cmd, C}, State = #state{server = Server, primary = Primary, port = Po
     {next_state, connected, State}.
 
 connection_failed(restart, State) ->
-    {next_state, connect, State}.
+    {next_state, connect, State};
+connection_failed( _Cmd , State = #state{server = Server}) ->
+    gen_server:call(essh, {res, Server, failed, inactive}),
+    {next_state, connection_failed, State}.	
 
 send_cmd(Port, C) ->
     %io:format("INFO:send command ~p~n", [C]),
