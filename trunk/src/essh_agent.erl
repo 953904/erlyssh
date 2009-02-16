@@ -23,7 +23,7 @@
 -define(SSH, "ssh ").
 -define(MAGIC, "@[6769]@").
 -define(ECHO, "echo @[6769]@").
--define(TIMEOUT, 20000).
+-define(TIMEOUT, 60000).
 -define(CMD_TIMEOUT, 300000).
 %% ====================================================================
 %% External functions
@@ -54,10 +54,10 @@ connect(_, State = #state{server = Server}) ->
     case open_ssh_port(Server, 0) of
         {ok, Port} ->
             State1 = State#state{port = Port},
-            gen_server:call(essh, {res, Server, connected, ok}),
+            gen_server:call(essh, {res, Server, connected, ok}, infinity),
             {next_state, connected, State1};
         {failed, _Reason} ->
-            gen_server:call(essh, {res, Server, connected, failed}),
+            gen_server:call(essh, {res, Server, connected, failed}, infinity),
             {next_state, connection_failed, State}
     end.
 
@@ -65,9 +65,9 @@ connected({cmd, C}, State = #state{server = Server, primary = Primary, port = Po
     send_cmd(Port, C),
     case receive_port_res(Primary, Port, []) of
         {ok, Res} ->
-            gen_server:call(essh, {res, Server, responsed, Res});
+            gen_server:call(essh, {res, Server, responsed, Res}, infinity);
         {failed, Reason} ->
-            gen_server:call(essh, {res, Server, failed, Reason})
+            gen_server:call(essh, {res, Server, failed, Reason}, infinity)
     end,
     {next_state, connected, State}.
 
