@@ -48,7 +48,11 @@ start(StartParas) ->
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init([SharedPath, SharedLib, FilePath, StartCommand]) -> 
-    Servers = get_server_lst(FilePath),    
+    Servers = try get_server_lst(FilePath) of
+					S -> S
+			catch 
+					_:X -> io:format("ERROR: can't open server list file~n"),halt()
+			end,
     %io:format("INFO:servers = ~p~n", [Servers]),
     [Primary | _ ] = Servers,
     put(primary, Primary),
